@@ -15,8 +15,10 @@
  */
 package io.javelit.core;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 // not using an interface to not expose this in the public API
 abstract class Reloader {
@@ -25,14 +27,42 @@ abstract class Reloader {
 
   record AppEntrypoint(JtRunnable runnable, ClassLoader classLoader) {
 
-    static AppEntrypoint of(Method method, ClassLoader classLoader) {
+    static AppEntrypoint of(final Class<?> klass, final ClassLoader classLoader) {
+      final Method method = resolveMainMethod(klass);
+      final boolean isStatic = Modifier.isStatic(method.getModifiers());
+      method.setAccessible(true);
+
       return new AppEntrypoint(() -> {
         try {
-          method.invoke(null, new Object[]{new String[]{}});
-        } catch (InvocationTargetException | IllegalAccessException e) {
+          final Object receiver = isStatic ? null : newInstance(klass);
+          final Object[] args = method.getParameterCount() == 0 ? null : new Object[]{new String[]{}};
+          method.invoke(receiver, args);
+        } catch (InvocationTargetException | IllegalAccessException | InstantiationException |
+                 NoSuchMethodException e) {
           throw new PageRunException(e);
         }
       }, classLoader);
+    }
+
+    private static Method resolveMainMethod(final Class<?> klass) {
+      try {
+        return klass.getDeclaredMethod("main", String[].class);
+      } catch (NoSuchMethodException e) {
+        try {
+          return klass.getDeclaredMethod("main");
+        } catch (NoSuchMethodException ex) {
+          throw new CompilationException(ex);
+        }
+      }
+    }
+
+    private static Object newInstance(final Class<?> klass) throws NoSuchMethodException,
+                                                                     InvocationTargetException,
+                                                                     IllegalAccessException,
+                                                                     InstantiationException {
+      final Constructor<?> constructor = klass.getDeclaredConstructor();
+      constructor.setAccessible(true);
+      return constructor.newInstance();
     }
   }
 }
