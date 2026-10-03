@@ -20,6 +20,8 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
+import jakarta.annotation.Nullable;
+
 // not using an interface to not expose this in the public API
 abstract class Reloader {
 
@@ -45,14 +47,31 @@ abstract class Reloader {
     }
 
     private static Method resolveMainMethod(final Class<?> klass) {
+      // resolution order: static(args) > static(no-args) > instance(args) > instance(no-args)
+      Method method = findMainMethod(klass, true, String[].class);
+      if (method == null) {
+        method = findMainMethod(klass, true);
+      }
+      if (method == null) {
+        method = findMainMethod(klass, false, String[].class);
+      }
+      if (method == null) {
+        method = findMainMethod(klass, false);
+      }
+      if (method == null) {
+        throw new CompilationException("No main method found in class %s".formatted(klass.getName()));
+      }
+      return method;
+    }
+
+    private static @Nullable Method findMainMethod(final Class<?> klass,
+                                                    final boolean requireStatic,
+                                                    final Class<?>... parameterTypes) {
       try {
-        return klass.getDeclaredMethod("main", String[].class);
+        final Method method = klass.getDeclaredMethod("main", parameterTypes);
+        return Modifier.isStatic(method.getModifiers()) == requireStatic ? method : null;
       } catch (NoSuchMethodException e) {
-        try {
-          return klass.getDeclaredMethod("main");
-        } catch (NoSuchMethodException ex) {
-          throw new CompilationException(ex);
-        }
+        return null;
       }
     }
 

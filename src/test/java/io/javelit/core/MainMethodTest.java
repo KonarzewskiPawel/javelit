@@ -16,7 +16,6 @@
 package io.javelit.core;
 
 import java.nio.file.Path;
-import java.util.Arrays;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledForJreRange;
@@ -96,6 +95,24 @@ public class MainMethodTest {
     assertThat(entrypoint.runnable()).isNotNull();
   }
 
+  @Test
+  @EnabledForJreRange(min = JRE.JAVA_25)
+  public void testMainResolutionOrderStaticNoArgsBeatsInstanceArgs() throws Exception {
+    final Path appPath = Path.of("src/test/resources/java25/MainResolutionOrder.java");
+    final Server.Builder builder = Server.builder(appPath, 0)
+                                         .buildSystem(BuildSystem.RUNTIME);
+    final FileReloader fileReloader = new FileReloader(builder);
+    final Reloader.AppEntrypoint entrypoint = fileReloader.reload();
+
+    entrypoint.runnable().run();
+
+    final Class<?> klass = entrypoint.classLoader().loadClass("MainResolutionOrder");
+    final String calledMethod = (String) klass.getDeclaredField("calledMethod").get(null);
+
+    // rule 2 (static void main()) must be resolved before rule 3 (instance void main(String[] args))
+    assertThat(calledMethod).isEqualTo("static-no-args");
+  }
+
   @ParameterizedTest
   @ValueSource(strings = {"MainNoStaticNoPublicClass", "Main", "MainNotPublic", "MainNotStatic", "MainMinimal", "MainNoArgs", "MainNoClass"})
   @EnabledForJreRange(min = JRE.JAVA_25)
@@ -107,7 +124,6 @@ public class MainMethodTest {
     final FileReloader fileReloader = new FileReloader(builder);
     final Reloader.AppEntrypoint entrypoint = fileReloader.reload();
 
-    System.out.println(entrypoint.classLoader());
     assertThat(entrypoint).isNotNull();
     assertThat(entrypoint.runnable()).isNotNull();
   }
